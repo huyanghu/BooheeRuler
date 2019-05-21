@@ -1,10 +1,10 @@
 package yanzhikai.ruler.InnerRulers;
 
 import android.content.Context;
-import android.graphics.Color;
 import android.graphics.Paint;
 import android.os.Build;
 import android.util.Log;
+import android.util.TypedValue;
 import android.view.VelocityTracker;
 import android.view.View;
 import android.view.ViewConfiguration;
@@ -20,8 +20,15 @@ import yanzhikai.ruler.RulerCallback;
  */
 
 public abstract class InnerRuler extends View {
+    public static final String TAG = "ruler";
     protected Context mContext;
     protected BooheeRuler mParent;
+
+    //加入放大倍数来防止精度丢失而导致无限绘制
+    protected static final int SCALE_TO_PX_FACTOR = 100;
+    //惯性回滚最小偏移值，小于这个值就应该直接滑动到目的点
+    protected static final int MIN_SCROLLER_DP = 1;
+    protected float minScrollerPx = MIN_SCROLLER_DP;
 
     protected Paint mSmallScalePaint, mBigScalePaint, mTextPaint, mOutLinePaint;
     //当前刻度值
@@ -61,6 +68,8 @@ public abstract class InnerRuler extends View {
         mCount = mParent.getCount();
         mDrawOffset = mCount * mParent.getInterval() / 2;
 
+        minScrollerPx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, MIN_SCROLLER_DP, context.getResources().getDisplayMetrics());
+
         initPaints();
 
         mOverScroller = new OverScroller(mContext);
@@ -91,12 +100,12 @@ public abstract class InnerRuler extends View {
         mSmallScalePaint = new Paint();
         mSmallScalePaint.setStrokeWidth(mParent.getSmallScaleWidth());
         mSmallScalePaint.setColor(mParent.getScaleColor());
-        mSmallScalePaint.setStrokeCap(Paint.Cap.ROUND);;
+        mSmallScalePaint.setStrokeCap(Paint.Cap.ROUND);
 
         mBigScalePaint = new Paint();
         mBigScalePaint.setColor(mParent.getScaleColor());
         mBigScalePaint.setStrokeWidth(mParent.getBigScaleWidth());
-        mBigScalePaint.setStrokeCap(Paint.Cap.ROUND);;
+        mBigScalePaint.setStrokeCap(Paint.Cap.ROUND);
 
         mTextPaint = new Paint();
         mTextPaint.setAntiAlias(true);
@@ -105,7 +114,8 @@ public abstract class InnerRuler extends View {
         mTextPaint.setTextAlign(Paint.Align.CENTER);
 //        mTextPaint.setStrokeJoin(Paint.Join.ROUND);
         mOutLinePaint = new Paint();
-        mOutLinePaint.setStrokeWidth(0);
+        mOutLinePaint.setStrokeWidth(mParent.getOutLineWidth());
+        mOutLinePaint.setAntiAlias(true);
         mOutLinePaint.setColor(mParent.getScaleColor());
     }
 
@@ -136,18 +146,21 @@ public abstract class InnerRuler extends View {
     public void computeScroll() {
         if (mOverScroller.computeScrollOffset()) {
             scrollTo(mOverScroller.getCurrX(), mOverScroller.getCurrY());
-
             //这是最后OverScroller的最后一次滑动，如果这次滑动完了mCurrentScale不是整数，则把尺子移动到最近的整数位置
-            if (!mOverScroller.computeScrollOffset() && mCurrentScale != Math.round(mCurrentScale)){
-//                Log.d("ruler", "computeScroll: " + mCurrentScale);
-                //Fling完进行一次检测回滚
-                scrollBackToCurrentScale();
+
+            if (!mOverScroller.computeScrollOffset()){
+                int currentIntScale = Math.round(mCurrentScale);
+                if ((Math.abs(mCurrentScale - currentIntScale) > 0.001f)) {
+                    //Fling完进行一次检测回滚
+                    scrollBackToCurrentScale(currentIntScale);
+                }
             }
-            invalidate();
+            postInvalidate();
         }
     }
 
     protected abstract void scrollBackToCurrentScale();
+    protected abstract void scrollBackToCurrentScale(int currentIntScale);
     protected abstract void goToScale(float scale);
     public abstract void refreshSize();
 

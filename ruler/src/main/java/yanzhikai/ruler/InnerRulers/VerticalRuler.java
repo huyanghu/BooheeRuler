@@ -5,6 +5,7 @@ import android.support.annotation.Px;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.VelocityTracker;
+import android.view.ViewGroup;
 
 import yanzhikai.ruler.BooheeRuler;
 
@@ -33,7 +34,7 @@ public abstract class VerticalRuler extends InnerRuler {
             mVelocityTracker = VelocityTracker.obtain();
         }
         mVelocityTracker.addMovement(event);
-
+        ViewGroup parent = (ViewGroup) getParent();//为了解决刻度尺在scrollview这种布局里面滑动冲突问题
         switch (event.getAction()) {
             case MotionEvent.ACTION_DOWN:
                 if (!mOverScroller.isFinished()) {
@@ -41,6 +42,7 @@ public abstract class VerticalRuler extends InnerRuler {
                 }
 
                 mLastY = currentY;
+                parent.requestDisallowInterceptTouchEvent(true);//按下时开始让父控件不要处理任何touch事件
                 break;
             case MotionEvent.ACTION_MOVE:
                 float moveY = mLastY - currentY;
@@ -62,6 +64,7 @@ public abstract class VerticalRuler extends InnerRuler {
                     mVelocityTracker = null;
                 }
                 releaseEdgeEffects();
+                parent.requestDisallowInterceptTouchEvent(false);//按下时开始让父控件不要处理任何touch事件
                 break;
             case MotionEvent.ACTION_CANCEL:
                 if (!mOverScroller.isFinished()) {
@@ -74,6 +77,7 @@ public abstract class VerticalRuler extends InnerRuler {
                     mVelocityTracker = null;
                 }
                 releaseEdgeEffects();
+                parent.requestDisallowInterceptTouchEvent(false);//按下时开始让父控件不要处理任何touch事件
                 break;
         }
         return true;
@@ -158,19 +162,32 @@ public abstract class VerticalRuler extends InnerRuler {
 
     //把Scale转化为ScrollY
     private int scaleToScrollY(float scale) {
-        return (int) ((scale - mParent.getMinScale()) / mMaxLength * mLength + mMinPosition);
+        return Math.round((scale - mParent.getMinScale()) / mMaxLength * mLength + mMinPosition);
+    }
+
+    //把Scale转化为ScrollY,放大SCALE_TO_PX_FACTOR倍，以免精度丢失问题
+    private float scaleToScrollFloatY(float scale) {
+        return ((scale - mParent.getMinScale()) / mMaxLength * mLength * SCALE_TO_PX_FACTOR + mMinPosition * SCALE_TO_PX_FACTOR);
     }
 
     //把移动后光标对准距离最近的刻度，就是回弹到最近刻度
     @Override
     protected void scrollBackToCurrentScale() {
-        //渐变回弹
-//        mCurrentScale = Math.round(mCurrentScale);
-        mOverScroller.startScroll(0, getScrollY(), 0, scaleToScrollY(Math.round(mCurrentScale)) - getScrollY(), 1000);
-        invalidate();
+        scrollBackToCurrentScale(Math.round(mCurrentScale));
+    }
 
-        //立刻回弹
-//        scrollTo(scaleToScrollY(mCurrentScale),0);
+    @Override
+    protected void scrollBackToCurrentScale(int currentIntScale) {
+        int dy = Math.round((scaleToScrollFloatY(currentIntScale) - SCALE_TO_PX_FACTOR * getScrollY()) / SCALE_TO_PX_FACTOR);
+        if (dy > minScrollerPx) {
+            //渐变回弹
+            mOverScroller.startScroll(getScrollX(), getScrollY(), 0, dy, 500);
+            invalidate();
+        } else {
+            //立刻回弹
+            scrollBy(0, dy);
+        }
+
     }
 
     @Override

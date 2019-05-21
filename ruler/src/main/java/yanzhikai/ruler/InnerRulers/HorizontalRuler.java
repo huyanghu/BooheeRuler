@@ -5,6 +5,7 @@ import android.support.annotation.Px;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.VelocityTracker;
+import android.view.ViewGroup;
 
 import yanzhikai.ruler.BooheeRuler;
 
@@ -36,7 +37,7 @@ public abstract class HorizontalRuler extends InnerRuler {
             mVelocityTracker = VelocityTracker.obtain();
         }
         mVelocityTracker.addMovement(event);
-
+        ViewGroup parent = (ViewGroup) getParent();//为了解决刻度尺在scrollview这种布局里面滑动冲突问题
         switch (event.getAction()) {
             case MotionEvent.ACTION_DOWN:
                 if (!mOverScroller.isFinished()) {
@@ -44,6 +45,7 @@ public abstract class HorizontalRuler extends InnerRuler {
                 }
 
                 mLastX = currentX;
+                parent.requestDisallowInterceptTouchEvent(true);//按下时开始让父控件不要处理任何touch事件
                 break;
             case MotionEvent.ACTION_MOVE:
                 float moveX = mLastX - currentX;
@@ -65,6 +67,7 @@ public abstract class HorizontalRuler extends InnerRuler {
                     mVelocityTracker = null;
                 }
                 releaseEdgeEffects();
+                parent.requestDisallowInterceptTouchEvent(false);//up或者cancel的时候恢复
                 break;
             case MotionEvent.ACTION_CANCEL:
                 if (!mOverScroller.isFinished()) {
@@ -78,6 +81,7 @@ public abstract class HorizontalRuler extends InnerRuler {
                     mVelocityTracker = null;
                 }
                 releaseEdgeEffects();
+                parent.requestDisallowInterceptTouchEvent(false);//up或者cancel的时候恢复
                 break;
         }
         return true;
@@ -96,6 +100,7 @@ public abstract class HorizontalRuler extends InnerRuler {
     //重写滑动方法，设置到边界的时候不滑,并显示边缘效果。滑动完输出刻度。
     @Override
     public void scrollTo(@Px int x, @Px int y) {
+        Log.i(TAG, "scrollTo x: " + x);
         if (x < mMinPosition) {
             goStartEdgeEffect(x);
             x = mMinPosition;
@@ -116,7 +121,7 @@ public abstract class HorizontalRuler extends InnerRuler {
     }
 
     //头部边缘效果处理
-    private void goStartEdgeEffect(int x){
+    private void goStartEdgeEffect(int x) {
         if (mParent.canEdgeEffect()) {
             if (!mOverScroller.isFinished()) {
                 mStartEdgeEffect.onAbsorb((int) mOverScroller.getCurrVelocity());
@@ -130,8 +135,8 @@ public abstract class HorizontalRuler extends InnerRuler {
     }
 
     //尾部边缘效果处理
-    private void goEndEdgeEffect(int x){
-        if(mParent.canEdgeEffect()) {
+    private void goEndEdgeEffect(int x) {
+        if (mParent.canEdgeEffect()) {
             if (!mOverScroller.isFinished()) {
                 mEndEdgeEffect.onAbsorb((int) mOverScroller.getCurrVelocity());
                 mOverScroller.abortAnimation();
@@ -144,7 +149,7 @@ public abstract class HorizontalRuler extends InnerRuler {
     }
 
     //取消边缘效果动画
-    private void releaseEdgeEffects(){
+    private void releaseEdgeEffects() {
         if (mParent.canEdgeEffect()) {
             mStartEdgeEffect.onRelease();
             mEndEdgeEffect.onRelease();
@@ -173,17 +178,30 @@ public abstract class HorizontalRuler extends InnerRuler {
         return (int) ((scale - mParent.getMinScale()) / mMaxLength * mLength + mMinPosition);
     }
 
+    //把Scale转化为ScrollX,放大SCALE_TO_PX_FACTOR倍，以免精度丢失问题
+    //TODO 转化大刻度的时候防止溢出
+    private float scaleToScrollFloatX(float scale) {
+        return (((scale - mParent.getMinScale()) / mMaxLength * mLength * SCALE_TO_PX_FACTOR) + mMinPosition * SCALE_TO_PX_FACTOR);
+    }
 
     //把移动后光标对准距离最近的刻度，就是回弹到最近刻度
     @Override
     protected void scrollBackToCurrentScale() {
-        //渐变回弹
-//        Log.d(TAG, "scrollBackToCurrentScale: ");
-        mOverScroller.startScroll(getScrollX(), 0, scaleToScrollX(Math.round(mCurrentScale)) - getScrollX(), 0, 500);
-        invalidate();
+        scrollBackToCurrentScale(Math.round(mCurrentScale));
+    }
 
-        //立刻回弹
-//        scrollTo(scaleToScrollX(mCurrentScale),0);
+    @Override
+    protected void scrollBackToCurrentScale(int currentIntScale) {
+        float intScrollX = scaleToScrollFloatX(currentIntScale);
+        int dx = Math.round((intScrollX - SCALE_TO_PX_FACTOR * getScrollX()) / SCALE_TO_PX_FACTOR);
+        if (dx > minScrollerPx) {
+            //渐变回弹
+            mOverScroller.startScroll(getScrollX(), getScrollY(), dx, 0, 500);
+            invalidate();
+        } else {
+            //立刻回弹
+            scrollBy(dx, 0);
+        }
     }
 
     @Override
